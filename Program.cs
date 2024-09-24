@@ -1,6 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Management;
+﻿using System.Management;
 using Microsoft.Extensions.Configuration;
 using System.Runtime.Versioning;
 using Spectre.Console;
@@ -13,7 +11,7 @@ using Spectre.Console;
 // It supports command line arguments and a configuration file
 // The configuration file is optional and can be used to store the file path, username, and password
 
-namespace DaveFileClose
+namespace FileUnlocker
 {
     class Program
     {
@@ -109,17 +107,47 @@ namespace DaveFileClose
                     Password = password
                 };
 
-                ManagementScope scope = new ManagementScope($"\\\\{serverName}\\root\\cimv2", options);
+                string scopePath = $"\\\\{serverName}\\root\\cimv2";
+                AnsiConsole.MarkupLine("[blue]{0} > Connection scope: {1}[/]", DateTime.Now, scopePath);
+
+                ManagementScope scope = new ManagementScope(scopePath, options);
 
                 AnsiConsole.Status()
                     .Start($"Connecting to server {serverName} as {username}...", ctx =>
                     {
                         ctx.Spinner(Spinner.Known.Dots2);
                         ctx.SpinnerStyle(Style.Parse("green"));
-                        scope.Connect();
+                        try
+                        {
+                            scope.Connect();
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            AnsiConsole.MarkupLine("[red]{0} > Access denied: {1}[/]", DateTime.Now, ex.Message);
+                            AnsiConsole.MarkupLine("[red]{0} > Please check the username and password.[/]", DateTime.Now);
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLine("[red]{0} > Error connecting to server: {1}[/]", DateTime.Now, ex.Message);
+                            throw;
+                        }
                     });
 
                 AnsiConsole.MarkupLine("[green]{0} > Connected to server {1}.[/]", DateTime.Now, serverName);
+
+                // Check if the file exists on the remote server
+                ObjectQuery fileQuery = new ObjectQuery($"SELECT * FROM CIM_DataFile WHERE Name = '{filePath.Replace("\\", "\\\\")}'");
+                ManagementObjectSearcher fileSearcher = new ManagementObjectSearcher(scope, fileQuery);
+
+                ManagementObjectCollection files = fileSearcher.Get();
+                if (files.Count == 0)
+                {
+                    AnsiConsole.MarkupLine("[red]{0} > File not found: {1}[/]", DateTime.Now, filePath);
+                    return;
+                }
+
+                AnsiConsole.MarkupLine("[green]{0} > File found: {1}[/]", DateTime.Now, filePath);
 
                 // Query for the locked file
                 ObjectQuery query = new ObjectQuery($"SELECT * FROM Win32_Process WHERE CommandLine LIKE '%{filePath}%'");
@@ -141,6 +169,10 @@ namespace DaveFileClose
                     });
 
                 AnsiConsole.MarkupLine("[green]{0} > File unlocked successfully.[/]", DateTime.Now);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                AnsiConsole.MarkupLine("[red]{0} > Access denied: {1}[/]", DateTime.Now, ex.Message);
             }
             catch (Exception ex)
             {

@@ -43,6 +43,7 @@ $RECYCLE.BIN/
 # Visual Studio build results
 bin/
 obj/
+appsettings.json
 
 # =========================
 # Operating System Files

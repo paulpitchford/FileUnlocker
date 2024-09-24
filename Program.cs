@@ -96,21 +96,48 @@ namespace FileUnlocker
             {
                 AnsiConsole.MarkupLine("[green]{0} > Starting to unlock the file...[/]", DateTime.Now);
 
-                // Extract server name from file path
-                string serverName = new Uri(filePath).Host;
+                // Determine if the path is a UNC path or a local path
+                bool isUncPath = filePath.StartsWith(@"\\");
+                string serverName;
+
+                if (isUncPath)
+                {
+                    // Extract server name from UNC path
+                    serverName = new Uri(filePath).Host;
+                }
+                else
+                {
+                    // For local paths, use the local machine name
+                    serverName = Environment.MachineName;
+                }
+
+                // Ensure the file path is correctly formatted for WMI
+                string wmiFilePath = filePath.Replace("\\", "\\\\");
+
                 AnsiConsole.MarkupLine("[blue]{0} > Extracted server name: {1}[/]", DateTime.Now, serverName);
 
                 // Connect to the remote server
-                ConnectionOptions options = new ConnectionOptions
+                ManagementScope scope;
+                if (isUncPath)
                 {
-                    Username = username,
-                    Password = password
-                };
+                    ConnectionOptions options = new ConnectionOptions
+                    {
+                        Username = username,
+                        Password = password
+                    };
 
-                string scopePath = $"\\\\{serverName}\\root\\cimv2";
-                AnsiConsole.MarkupLine("[blue]{0} > Connection scope: {1}[/]", DateTime.Now, scopePath);
+                    string scopePath = $"\\\\{serverName}\\root\\cimv2";
+                    AnsiConsole.MarkupLine("[blue]{0} > Connection scope: {1}[/]", DateTime.Now, scopePath);
 
-                ManagementScope scope = new ManagementScope(scopePath, options);
+                    scope = new ManagementScope(scopePath, options);
+                }
+                else
+                {
+                    string scopePath = $"\\\\{serverName}\\root\\cimv2";
+                    AnsiConsole.MarkupLine("[blue]{0} > Connection scope: {1}[/]", DateTime.Now, scopePath);
+
+                    scope = new ManagementScope(scopePath);
+                }
 
                 AnsiConsole.Status()
                     .Start($"Connecting to server {serverName} as {username}...", ctx =>
@@ -137,7 +164,7 @@ namespace FileUnlocker
                 AnsiConsole.MarkupLine("[green]{0} > Connected to server {1}.[/]", DateTime.Now, serverName);
 
                 // Check if the file exists on the remote server
-                ObjectQuery fileQuery = new ObjectQuery($"SELECT * FROM CIM_DataFile WHERE Name = '{filePath.Replace("\\", "\\\\")}'");
+                ObjectQuery fileQuery = new ObjectQuery($"SELECT * FROM CIM_DataFile WHERE Name = '{wmiFilePath}'");
                 ManagementObjectSearcher fileSearcher = new ManagementObjectSearcher(scope, fileQuery);
 
                 ManagementObjectCollection files = fileSearcher.Get();
@@ -150,7 +177,7 @@ namespace FileUnlocker
                 AnsiConsole.MarkupLine("[green]{0} > File found: {1}[/]", DateTime.Now, filePath);
 
                 // Query for the locked file
-                ObjectQuery query = new ObjectQuery($"SELECT * FROM Win32_Process WHERE CommandLine LIKE '%{filePath}%'");
+                ObjectQuery query = new ObjectQuery($"SELECT * FROM Win32_Process WHERE CommandLine LIKE '%{wmiFilePath}%'");
                 ManagementObjectSearcher searcher = new ManagementObjectSearcher(scope, query);
 
                 AnsiConsole.Status()
